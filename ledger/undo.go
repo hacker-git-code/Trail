@@ -88,6 +88,63 @@ func (s *Store) Undo(target *Entry, actor Actor, force, dryRun bool) (*Entry, []
 	return e, plan, conflicts, err
 }
 
+// ErrNothingToRestore means every file is already in the requested state.
+var ErrNothingToRestore = errors.New("already in that state — nothing to restore")
+
+// Target is a saved version to put a file back to.
+type Target struct {
+	Path string
+	Hash string
+	Mode uint32
+}
+
+// Restore puts each file back to a saved version (bringing back deleted files,
+// or rolling one file to an earlier version) and records it as one "restore"
+// entry. Whatever it overwrites is saved first, so a restore can be undone.
+func (s *Store) Restore(targets []Target, actor Actor, summary, root string) (*Entry, []Change, error) {
+	unlock, err := s.lock()
+	if err != nil {
+		return nil, nil, err
+	}
+	defer unlock()
+	var plan []Change
+	for _, t := range targets {
+		if !s.HasBlob(t.Hash) {
+			return nil, nil, errors.New("the saved version of " + t.Path + " is missing from the object store")
+		}
+		cur, err := s.StateOf(t.Path)
+		if err != nil {
+			return nil, nil, err
+		}
+		if t.Mode == 0 {
+			t.Mode = cur.Mode // no saved permissions: keep the file's current ones
+		}
+		c, changed := s.makeChange(t.Path, cur, FileState{Hash: t.Hash, Mode: t.Mode})
+		if !changed {
+			continue
+		}
+		if c.AfterMode == 0 {
+			c.AfterMode = cur.Mode
+		}
+		plan = append(plan, c)
+	}
+	if len(plan) == 0 {
+		return nil, nil, ErrNothingToRestore
+	}
+	for _, c := range plan {
+		if err := s.restore(c, root); err != nil {
+			return nil, nil, err
+		}
+	}
+	e, err := s.appendLocked(Body{
+		Actor:   actor,
+		Action:  Action{Type: "restore", Summary: summary},
+		Root:    root,
+		Changes: plan,
+	})
+	return e, plan, err
+}
+
 // restore puts one file into the change's "after" state. When it removes a
 // file, it also removes folders left empty by that, up to root.
 func (s *Store) restore(c Change, root string) error {

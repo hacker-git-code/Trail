@@ -211,6 +211,77 @@ func TestUndoRefusesToClobberLaterWork(t *testing.T) {
 	}
 }
 
+func TestDeletedFileCanBeRestored(t *testing.T) {
+	s := newStore(t)
+	dir := t.TempDir() // a plain folder: no git
+	write(t, dir, "a/report.txt", "quarterly numbers\n")
+	before, err := s.SnapshotMax(dir, 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.RemoveAll(filepath.Join(dir, "a"))
+	after, _ := s.SnapshotMax(dir, 1000)
+	changes := s.DiffManifests(dir, before, after)
+	if len(changes) != 1 || changes[0].Op != "delete" {
+		t.Fatalf("want one delete, got %+v", changes)
+	}
+	s.Append(Body{Actor: Actor{Kind: "unknown", Name: "unknown app"}, Action: Action{Type: "observed", Summary: "deleted"}, Root: dir, Changes: changes})
+
+	c := changes[0]
+	e, plan, err := s.Restore([]Target{{Path: c.Path, Hash: c.Before, Mode: c.BeforeMode}}, Actor{Kind: "human", Name: "me"}, "restored report.txt", dir)
+	if err != nil || len(plan) != 1 || plan[0].Op != "create" {
+		t.Fatalf("restore: %v %+v", err, plan)
+	}
+	if read(t, dir, "a/report.txt") != "quarterly numbers\n" {
+		t.Fatal("file did not come back")
+	}
+	if _, _, err := s.Restore([]Target{{Path: c.Path, Hash: c.Before}}, Actor{}, "again", dir); err != ErrNothingToRestore {
+		t.Fatalf("second restore: want ErrNothingToRestore, got %v", err)
+	}
+	// A restore is a normal entry, so it can be undone.
+	if _, _, _, err := s.Undo(e, Actor{Kind: "human", Name: "me"}, false, false); err != nil {
+		t.Fatal(err)
+	}
+	if read(t, dir, "a/report.txt") != "<missing>" {
+		t.Fatal("undoing the restore did not remove the file again")
+	}
+	if r, _ := s.Verify(true); !r.OK() {
+		t.Fatal(r.Problems)
+	}
+}
+
+func TestEntriesFromReadsOnlyNewEntries(t *testing.T) {
+	s := newStore(t)
+	note(s, t, "one")
+	_, off, err := s.EntriesFrom(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	note(s, t, "two")
+	note(s, t, "three")
+	got, off2, _ := s.EntriesFrom(off)
+	if len(got) != 2 || got[0].Body.Action.Summary != "two" || off2 <= off {
+		t.Fatalf("got %d entries", len(got))
+	}
+	if again, _, _ := s.EntriesFrom(off2); len(again) != 0 {
+		t.Fatal("re-read old entries")
+	}
+}
+
+func TestRecoveryFieldIsSignedAndVerifies(t *testing.T) {
+	s := newStore(t)
+	if _, err := s.Append(Body{Actor: Actor{Kind: "agent", Name: "x"}, Action: Action{Type: "external", Summary: "sent email"}, Recovery: "follow up"}); err != nil {
+		t.Fatal(err)
+	}
+	es, _ := s.Entries()
+	if es[1].Body.Recovery != "follow up" {
+		t.Fatal("recovery not stored")
+	}
+	if r, _ := s.Verify(false); !r.OK() {
+		t.Fatal(r.Problems)
+	}
+}
+
 func TestFindRootRefusesHome(t *testing.T) {
 	home, _ := os.UserHomeDir()
 	if _, ok := FindRoot(home); ok {

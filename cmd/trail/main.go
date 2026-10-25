@@ -16,15 +16,24 @@ import (
 	"github.com/hacker-git-code/trail/ledger"
 )
 
-const version = "0.1.0"
+const version = "0.2.0"
 
-const usage = `trail — every change made on your behalf, on a timeline you can undo.
+const usage = `trail — undo for everything AI does on your computer.
 
 See what happened
   trail log                 the timeline, newest first   (--here, --agent NAME, -n 50)
   trail show <id>           one entry: who, why, and the exact diff
   trail undo [id]           put files back the way they were (default: the latest change)
   trail verify              prove nothing in the history was edited, removed or reordered
+
+Get files back
+  trail deleted             every deleted file Trail can bring back
+  trail restore <path>      bring back a file, or everything missing in a folder
+  trail history <file>      every saved version of a file   (restore one with --from <id>)
+
+Cover your whole computer
+  trail watch add <folder>  keep a copy of any folder and record every change, from any app
+  trail watch               run the watcher   (autostart on|off, list, stop, rm)
 
 Connect your tools
   trail install claude      record everything Claude Code does   (--project, --with-mcp)
@@ -33,7 +42,7 @@ Connect your tools
 
 Build on it
   trail begin / trail end   bracket any process from your own tool or script
-  trail note <text>         record an action outside the file system (email sent, deploy, …)
+  trail note <text>         record an action outside your files (email sent, deploy, …)   (--recover "how to fix")
   trail head                the current head, to publish as a tamper-proof anchor
   trail status              where things are and what is connected
 
@@ -79,6 +88,14 @@ func main() {
 		err = cmdInstall(args, true)
 	case "wrap":
 		err = cmdWrap(args)
+	case "watch":
+		err = cmdWatch(args)
+	case "deleted":
+		err = cmdDeleted(args)
+	case "restore":
+		err = cmdRestore(args)
+	case "history":
+		err = cmdHistory(args)
 	case "shell-init":
 		err = cmdShellInit(args)
 	case "version", "--version", "-v":

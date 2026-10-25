@@ -21,8 +21,10 @@ timeline with undo. SPEC.md is the foundation; the code implements it.
 
 ## Layout
 
-- `ledger/` — the engine (importable): store, entries + verify, objects, snapshots, diff, undo
-- `cmd/trail/` — the CLI: views, Claude Code hooks + installer, `run`/`begin`/`end`/`note`/`wrap`
+- `ledger/` — the engine (importable): store, entries + verify, objects, snapshots, diff, undo, restore
+- `cmd/trail/` — the CLI: views, Claude Code hooks + installer, `run`/`begin`/`end`/`note`/`wrap`,
+  `watch.go` (folder watcher + autostart), `recover.go` (deleted/history/restore, recovery hints)
+- The watcher must never record a change twice: it skips changes another entry already recorded.
 - `SPEC.md` — the ledger format
 
 ## Checks before committing

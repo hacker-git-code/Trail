@@ -79,6 +79,11 @@ func (s *Store) loadIndex(root string) Manifest {
 // storing the content of any version it has not seen before. A per-folder
 // index means unchanged files are not re-read.
 func (s *Store) Snapshot(root string) (Manifest, error) {
+	return s.SnapshotMax(root, s.Config.MaxFiles)
+}
+
+// SnapshotMax is Snapshot with its own file limit (watched folders allow more).
+func (s *Store) SnapshotMax(root string, maxFiles int) (Manifest, error) {
 	ignored := s.ignorer(root)
 	idx := s.loadIndex(root)
 	out := Manifest{}
@@ -109,7 +114,7 @@ func (s *Store) Snapshot(root string) (Manifest, error) {
 		if err != nil || info.Size() > s.Config.MaxFileBytes {
 			return nil
 		}
-		if count++; count > s.Config.MaxFiles {
+		if count++; count > maxFiles {
 			return ErrScopeTooLarge
 		}
 		mt := info.ModTime().UnixNano()
@@ -135,6 +140,52 @@ func (s *Store) Snapshot(root string) (Manifest, error) {
 		writeFileAtomic(s.indexPath(root), b, 0o600)
 	}
 	return out, nil
+}
+
+// Measure counts the files under root that Trail would keep a copy of, and
+// their total size, stopping early once it passes limit files.
+func (s *Store) Measure(root string, limit int) (files int, bytes int64) {
+	ignored := s.ignorer(root)
+	filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || p == root {
+			return nil
+		}
+		rel, _ := filepath.Rel(root, p)
+		if ignored(filepath.ToSlash(rel), d.Name()) {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if d.IsDir() || !d.Type().IsRegular() {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil || info.Size() > s.Config.MaxFileBytes {
+			return nil
+		}
+		files++
+		bytes += info.Size()
+		if files > limit {
+			return filepath.SkipAll
+		}
+		return nil
+	})
+	return files, bytes
+}
+
+// SameManifest reports whether two snapshots describe identical files.
+func SameManifest(a, b Manifest) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, x := range a {
+		y, ok := b[k]
+		if !ok || x.Hash != y.Hash || x.Mode != y.Mode {
+			return false
+		}
+	}
+	return true
 }
 
 // StateOf records the current state of one file.

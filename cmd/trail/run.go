@@ -243,13 +243,14 @@ func cmdNote(args []string) error {
 	fs := flag.NewFlagSet("note", flag.ContinueOnError)
 	agent := fs.String("agent", "", "")
 	why := fs.String("why", "", "")
+	recover := fs.String("recover", "", "")
 	pos, err := parseFlags(fs, args)
 	if err != nil {
 		return err
 	}
 	text := strings.Join(pos, " ")
 	if text == "" {
-		return errors.New(`usage: trail note [--agent NAME] [--why TEXT] "what happened"`)
+		return errors.New(`usage: trail note [--agent NAME] [--why TEXT] [--recover "how to reverse it"] "what happened"`)
 	}
 	actor := ledger.Actor{Kind: "agent", Name: *agent}
 	if *agent == "" {
@@ -259,7 +260,11 @@ func cmdNote(args []string) error {
 	if err != nil {
 		return err
 	}
-	e, err := s.Append(ledger.Body{Actor: actor, Action: ledger.Action{Type: "external", Summary: oneLine(text, 200)}, Why: *why})
+	hint := *recover
+	if hint == "" {
+		hint = "Trail recorded this but can't reverse it — it happened outside your files."
+	}
+	e, err := s.Append(ledger.Body{Actor: actor, Action: ledger.Action{Type: "external", Summary: oneLine(text, 200)}, Why: *why, Recovery: hint})
 	if err != nil {
 		return err
 	}

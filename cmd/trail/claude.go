@@ -115,11 +115,17 @@ func handleClaude(data []byte) error {
 		why := oneLine(s.SessionPrompt(ev.SessionID), 400)
 
 		if isMCP {
-			// Something happened outside the file system. Trail can record it, not reverse it.
+			// Something happened outside the file system. Trail can record it and
+			// say how to reverse it, but can't reverse it itself.
+			hint, readOnly := recoveryHint(ev.ToolName)
+			if readOnly {
+				return nil // a lookup changed nothing
+			}
 			_, err := s.Append(ledger.Body{
-				Actor:  actor,
-				Action: ledger.Action{Type: "external", Tool: ev.ToolName, Summary: mcpSummary(ev.ToolName), Command: oneLine(string(ev.ToolInput), 600), Failed: failed},
-				Why:    why,
+				Actor:    actor,
+				Action:   ledger.Action{Type: "external", Tool: ev.ToolName, Summary: mcpSummary(ev.ToolName), Command: oneLine(string(ev.ToolInput), 600), Failed: failed},
+				Why:      why,
+				Recovery: hint,
 			})
 			return err
 		}

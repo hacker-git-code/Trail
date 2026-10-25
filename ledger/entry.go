@@ -65,6 +65,9 @@ type Body struct {
 	Root    string   `json:"root,omitempty"`
 	Changes []Change `json:"changes,omitempty"`
 	Note    string   `json:"note,omitempty"`
+	// Recovery tells a person how to reverse an action Trail can't reverse
+	// itself (an email sent, a payment made). Optional.
+	Recovery string `json:"recovery,omitempty"`
 }
 
 // Entry is one line of the ledger.
@@ -241,6 +244,44 @@ func (s *Store) Entries() ([]*Entry, error) {
 		out = append(out, e)
 	}
 	return out, sc.Err()
+}
+
+// EntriesFrom reads the entries that start at byte offset off or later, and
+// returns the offset just past the last complete line. A watcher calls it
+// repeatedly to see only what was appended since it last looked.
+func (s *Store) EntriesFrom(off int64) ([]*Entry, int64, error) {
+	f, err := os.Open(s.ledgerPath())
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, off, nil
+	}
+	if err != nil {
+		return nil, off, err
+	}
+	defer f.Close()
+	if fi, err := f.Stat(); err == nil && fi.Size() < off {
+		off = 0
+	}
+	if _, err := f.Seek(off, io.SeekStart); err != nil {
+		return nil, off, err
+	}
+	r := bufio.NewReaderSize(f, 1<<20)
+	var out []*Entry
+	pos := off
+	for {
+		line, err := r.ReadBytes('\n')
+		if len(line) > 0 && line[len(line)-1] == '\n' {
+			pos += int64(len(line))
+			if t := bytes.TrimSpace(line); len(t) > 0 {
+				if e, perr := parseLine(t); perr == nil {
+					out = append(out, e)
+				}
+			}
+		}
+		if err != nil {
+			break // a line still being written is read next time
+		}
+	}
+	return out, pos, nil
 }
 
 // FindIn returns the entry whose id starts with prefix.

@@ -33,13 +33,16 @@ func purple(s string) string { return paint("35", s) }
 
 // pretty shows a path the way a person thinks of it: relative to here, or ~/….
 func pretty(p string) string {
-	if cwd, err := os.Getwd(); err == nil {
-		if rel, err := filepath.Rel(cwd, p); err == nil && !strings.HasPrefix(rel, "..") {
+	if cwd, err := os.Getwd(); err == nil && filepath.Dir(cwd) != cwd {
+		if rel, err := filepath.Rel(cwd, p); err == nil && rel != "." && !strings.HasPrefix(rel, "..") {
 			return filepath.ToSlash(rel)
 		}
 	}
 	if home, err := os.UserHomeDir(); err == nil {
 		if rel, err := filepath.Rel(home, p); err == nil && !strings.HasPrefix(rel, "..") {
+			if rel == "." {
+				return "~"
+			}
 			return "~/" + filepath.ToSlash(rel)
 		}
 	}
@@ -50,6 +53,10 @@ func marker(e *ledger.Entry) string {
 	switch e.Body.Action.Type {
 	case "undo":
 		return yellow("↺")
+	case "restore":
+		return green("↩")
+	case "observed":
+		return cyan("●")
 	case "external":
 		return purple("◆")
 	case "init":

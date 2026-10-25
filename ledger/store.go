@@ -21,15 +21,21 @@ import (
 
 // Config holds local settings. It is not part of the ledger.
 type Config struct {
-	Wrap         []string `json:"wrap"`           // CLIs wrapped by `trail shell-init`
-	MaxFileBytes int64    `json:"max_file_bytes"` // larger files are not tracked
-	MaxFiles     int      `json:"max_files"`      // larger folders are not snapshotted
-	Ignore       []string `json:"ignore"`         // extra ignore patterns, like .trailignore
+	Wrap          []string `json:"wrap"`            // CLIs wrapped by `trail shell-init`
+	MaxFileBytes  int64    `json:"max_file_bytes"`  // larger files are not tracked
+	MaxFiles      int      `json:"max_files"`       // larger folders are not snapshotted
+	Ignore        []string `json:"ignore"`          // extra ignore patterns, like .trailignore
+	Watch         []string `json:"watch"`           // folders `trail watch` keeps a copy of
+	WatchMaxFiles int      `json:"watch_max_files"` // larger watched folders are refused
 }
 
 func DefaultConfig() Config {
-	return Config{Wrap: []string{}, MaxFileBytes: 10 << 20, MaxFiles: 25000, Ignore: []string{}}
+	return Config{Wrap: []string{}, MaxFileBytes: 10 << 20, MaxFiles: 25000, Ignore: []string{}, Watch: []string{}, WatchMaxFiles: 200000}
 }
+
+// File is the path of a file in the ledger directory, for local state such as
+// the watcher's heartbeat. It is never part of the ledger itself.
+func (s *Store) File(name string) string { return s.path(name) }
 
 // Store is an open ledger directory.
 type Store struct {
@@ -116,6 +122,15 @@ func (s *Store) loadConfig() error {
 	}
 	if s.Config.MaxFiles <= 0 {
 		s.Config.MaxFiles = d.MaxFiles
+	}
+	if s.Config.WatchMaxFiles <= 0 {
+		s.Config.WatchMaxFiles = d.WatchMaxFiles
+	}
+	if s.Config.Watch == nil {
+		s.Config.Watch = []string{}
+	}
+	if s.Config.Wrap == nil {
+		s.Config.Wrap = []string{}
 	}
 	return nil
 }

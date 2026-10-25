@@ -116,6 +116,9 @@ func cmdLog(args []string) error {
 		if u, ok := undone[e.ID]; ok {
 			summary = dim(summary + "  (undone by " + u.Short() + ")")
 		}
+		if e.Body.Action.Type == "external" {
+			summary += purple("  can't be undone")
+		}
 		fmt.Printf("  %s  %s %s  %s  %s  %s\n",
 			dim(t.Format("15:04")), marker(e), dim(e.Short()),
 			cyan(fmt.Sprintf("%-12s", oneLine(e.Body.Actor.Name, 12))), summary, stats(e.Body.Changes))
@@ -125,6 +128,9 @@ func cmdLog(args []string) error {
 		}
 		if e.Body.Note != "" {
 			fmt.Println(pad + yellow("!    "+oneLine(e.Body.Note, 80)))
+		}
+		if e.Body.Recovery != "" {
+			fmt.Println(pad + purple("fix  ") + oneLine(e.Body.Recovery, 80))
 		}
 	}
 	return nil
@@ -189,6 +195,10 @@ func cmdShow(args []string) error {
 		row("undo", yellow("undone by "+u.Short()))
 	}
 	row("note", b.Note)
+	if b.Action.Type == "external" {
+		row("undo", purple("can't be undone by Trail — it happened outside your files"))
+		row("fix", b.Recovery)
+	}
 	if len(b.Changes) == 0 {
 		return nil
 	}
@@ -273,6 +283,21 @@ func cmdUndo(args []string) error {
 	if len(pos) > 0 {
 		if target, err = ledger.FindIn(entries, pos[0]); err != nil {
 			return err
+		}
+		if len(target.Body.Changes) == 0 && target.Body.Action.Type != "init" {
+			// An email sent, an issue created: a file diff can't reverse it,
+			// so say plainly what happened and how a person can fix it.
+			fmt.Printf("%s %s can't be undone by Trail — it happened outside your files.\n\n", purple("◆"), bold(oneLine(target.Body.Action.Summary, 70)))
+			fmt.Printf("  %s  %s, %s\n", dim("what"), target.Body.Actor.Name, target.When().Local().Format("Mon 2 Jan 15:04"))
+			if target.Body.Action.Command != "" {
+				fmt.Printf("  %s  %s\n", dim("sent"), oneLine(target.Body.Action.Command, 200))
+			}
+			fix := target.Body.Recovery
+			if fix == "" {
+				fix = "Reverse it by hand where it happened."
+			}
+			fmt.Printf("  %s   %s\n", dim("fix"), fix)
+			return errQuiet
 		}
 		if u, ok := undone[target.ID]; ok && !*force {
 			return fmt.Errorf("%s was already undone by %s — run `trail undo %s` to bring it back", target.Short(), u.Short(), u.Short())
@@ -421,6 +446,19 @@ func cmdStatus(args []string) error {
 		fmt.Printf("  %s  %s\n", dim("wrapped"), strings.Join(s.Config.Wrap, ", "))
 	} else {
 		fmt.Printf("  %s  none — %s\n", dim("wrapped"), bold("trail wrap add <cli>"))
+	}
+	if len(s.Config.Watch) > 0 {
+		state := yellow("not running") + dim(" — trail watch")
+		if watcherAlive(s) {
+			state = green("running")
+		}
+		names := make([]string, len(s.Config.Watch))
+		for i, w := range s.Config.Watch {
+			names[i] = pretty(w)
+		}
+		fmt.Printf("  %s  %s · %s\n", dim("watch  "), strings.Join(names, ", "), state)
+	} else {
+		fmt.Printf("  %s  none — %s\n", dim("watch  "), bold("trail watch add <folder>"))
 	}
 	return nil
 }

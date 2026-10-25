@@ -58,6 +58,7 @@ Lines are separated by `\n`. A writer appends a whole line in a single write.
 | `root`    | string?  | the folder the action was scoped to |
 | `changes` | array?   | file changes (section 4) |
 | `note`    | string?  | anything a reader should know (e.g. "not snapshotted") |
+| `recovery`| string?  | for actions Trail can't reverse (an email sent): how a person can |
 
 ### 3.1 actor
 
@@ -65,7 +66,8 @@ Lines are separated by `\n`. A writer appends a whole line in a single write.
 {"kind":"agent","name":"claude-code","session":"…","host":"…"}
 ```
 
-`kind` is `agent`, `human`, or `system`. `name` is the tool or person.
+`kind` is `agent`, `human`, `system`, or `unknown` (a change seen by a folder
+watcher, where the program that made it isn't known). `name` is the tool or person.
 
 ### 3.2 action
 
@@ -79,7 +81,9 @@ Lines are separated by `\n`. A writer appends a whole line in a single write.
 | `tool`     | an agent used a tool (edit a file, run a shell command, …) |
 | `run`      | a wrapped command ran from start to finish |
 | `undo`     | a previous entry was reversed. `ref` is that entry's `id`. |
-| `external` | something happened outside the file system (email sent, API called). Recorded, not reversible. |
+| `observed` | a folder watcher saw files change. Who changed them is not known. |
+| `restore`  | files were put back to saved versions (a deleted file brought back, a file rolled back). |
+| `external` | something happened outside the file system (email sent, API called). Recorded, not reversible; `recovery` says how a person can reverse it. |
 
 Unknown types MUST be preserved and displayed, not rejected.
 
@@ -139,3 +143,9 @@ user explicitly forces it. Undoing an `undo` entry is a redo.
 
 Any change to sections 2–6 requires bumping `v`. Readers MUST verify entries
 of versions they understand and report, not discard, versions they don't.
+
+Adding an optional body field or a new `action.type` / `actor.kind` value is
+not a breaking change and keeps `v` at 1. Readers MUST ignore body fields they
+don't know (the `id` covers the raw bytes, so verification is unaffected) and
+display unknown types as-is. `recovery`, `observed`, `restore` and `unknown`
+were added this way in trail 0.2.
