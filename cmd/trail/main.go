@@ -16,7 +16,7 @@ import (
 	"github.com/hacker-git-code/trail/ledger"
 )
 
-const version = "0.2.0"
+var version = "0.2.1" // set at build time with -ldflags "-X main.version=…"
 
 const usage = `trail — undo for everything AI does on your computer.
 
@@ -29,7 +29,7 @@ See what happened
 Get files back
   trail deleted             every deleted file Trail can bring back
   trail restore <path>      bring back a file, or everything missing in a folder
-  trail history <file>      every saved version of a file   (restore one with --from <id>)
+  trail history <file>      every saved version of a file   (go back with --before <id>)
 
 Cover your whole computer
   trail watch add <folder>  keep a copy of any folder and record every change, from any app
@@ -45,6 +45,7 @@ Build on it
   trail note <text>         record an action outside your files (email sent, deploy, …)   (--recover "how to fix")
   trail head                the current head, to publish as a tamper-proof anchor
   trail status              where things are and what is connected
+  trail update              get the latest version   (--check to only look)
 
 The ledger lives in ~/.trail (or $TRAIL_HOME). Format: SPEC.md.
 `
@@ -57,6 +58,7 @@ func main() {
 		fmt.Print(usage)
 		return
 	}
+	cleanupOldBinary()
 	cmd, args := os.Args[1], os.Args[2:]
 	var err error
 	switch cmd {
@@ -88,6 +90,8 @@ func main() {
 		err = cmdInstall(args, true)
 	case "wrap":
 		err = cmdWrap(args)
+	case "update", "upgrade":
+		err = cmdUpdate(args)
 	case "watch":
 		err = cmdWatch(args)
 	case "deleted":

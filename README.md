@@ -45,11 +45,26 @@ Built from the replies to the launch post:
 
 ## Install
 
-Download the binary for your computer from the
-[latest release](https://github.com/hacker-git-code/trail/releases/latest),
-rename it to `trail` (`trail.exe` on Windows) and put it on your PATH.
+**Windows** (PowerShell):
+```powershell
+irm https://raw.githubusercontent.com/hacker-git-code/trail/main/install.ps1 | iex
+```
 
-Or build it: `go build -o trail ./cmd/trail`
+**macOS / Linux:**
+```sh
+curl -fsSL https://raw.githubusercontent.com/hacker-git-code/trail/main/install.sh | sh
+```
+
+No Go, no PATH editing: it downloads the latest release, checks it runs, and puts
+it on your PATH. Run it again any time to update; it replaces your existing copy
+in place.
+
+**Already installed?** `trail update` gets the latest version (from 0.2.1 on).
+Your history in `~/.trail` is never touched, and a running watcher is restarted
+on the new version.
+
+Or download a binary from [releases](https://github.com/hacker-git-code/trail/releases/latest),
+or build it: `go build -o trail ./cmd/trail`
 
 ## Set it up
 
@@ -75,6 +90,7 @@ trail wrap add codex aider gemini              # any other CLI (paste the one li
 | `trail verify` | prove nothing was edited, removed or reordered |
 | `trail head` | the current head — post it somewhere public as an anchor |
 | `trail status` | what's connected and watched |
+| `trail update` | get the latest version (`--check` to only look) |
 
 | Watching | |
 |---|---|

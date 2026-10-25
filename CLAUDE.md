@@ -23,7 +23,10 @@ timeline with undo. SPEC.md is the foundation; the code implements it.
 
 - `ledger/` — the engine (importable): store, entries + verify, objects, snapshots, diff, undo, restore
 - `cmd/trail/` — the CLI: views, Claude Code hooks + installer, `run`/`begin`/`end`/`note`/`wrap`,
-  `watch.go` (folder watcher + autostart), `recover.go` (deleted/history/restore, recovery hints)
+  `watch.go` (folder watcher + autostart), `recover.go` (deleted/history/restore, recovery hints),
+  `update.go` (self-update from the latest GitHub release)
+- `install.ps1` / `install.sh` — one-line installers; they download release assets by name, so keep
+  asset names `trail-<windows|macos|linux>-<amd64|arm64>[.exe]`
 - The watcher must never record a change twice: it skips changes another entry already recorded.
 - `SPEC.md` — the ledger format
 
