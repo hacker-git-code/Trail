@@ -59,6 +59,9 @@ Lines are separated by `\n`. A writer appends a whole line in a single write.
 | `changes` | array?   | file changes (section 4) |
 | `note`    | string?  | anything a reader should know (e.g. "not snapshotted") |
 | `recovery`| string?  | for actions Trail can't reverse (an email sent): how a person can |
+| `dest`    | string?  | where data went (an AI provider, a server, a site) |
+| `sent`    | array?   | what left the computer (section 4.1) |
+| `secrets` | array?   | credentials found in what was sent or blocked (section 4.1) |
 
 ### 3.1 actor
 
@@ -82,6 +85,10 @@ watcher, where the program that made it isn't known). `name` is the tool or pers
 | `run`      | a wrapped command ran from start to finish |
 | `undo`     | a previous entry was reversed. `ref` is that entry's `id`. |
 | `observed` | a folder watcher saw files change. Who changed them is not known. |
+| `sent`     | data left the computer: files and outputs an AI agent sent to its model. `sent` lists them. |
+| `guard`    | something was stopped (or paused for the person to decide) before it could leak a secret, or a site/app was blocked. |
+| `network`  | apps connected to sites for the first time. Each `sent` item's `source` reads `app → host`. |
+| `resolved` | a leaked secret was cancelled. `ref` is that secret's `hash`. |
 | `restore`  | files were put back to saved versions (a deleted file brought back, a file rolled back). |
 | `external` | something happened outside the file system (email sent, API called). Recorded, not reversible; `recovery` says how a person can reverse it. |
 
@@ -103,6 +110,20 @@ Unknown types MUST be preserved and displayed, not rejected.
 Every hash referenced by a change MUST exist in `objects/`, stored at
 `objects/<first 2 hex>/<remaining 62 hex>`, zlib-compressed. The hash is
 of the **uncompressed** content, so readers can check every object they open.
+
+### 4.1 Sent data and secrets
+
+```json
+"sent":    [{"source":"/abs/path/.env","bytes":512,"hash":"<16 hex>","secrets":[ ... ]}],
+"secrets": [{"kind":"Stripe key","masked":"sk_liv…ab12","hash":"<16 hex>"}]
+```
+
+- A `sent` item's `source` is an absolute path for a file, or a description
+  ("output of `printenv`"). `hash` is the first 16 hex of SHA-256 of what was
+  sent; the content itself is not stored.
+- A secret's value is **never** written to the ledger. `masked` shows at most
+  its first 6 and last 4 characters; `hash` (first 16 hex of SHA-256 of the
+  value) lets a reader recognise the same secret again.
 
 ## 5. The chain
 
@@ -148,4 +169,5 @@ Adding an optional body field or a new `action.type` / `actor.kind` value is
 not a breaking change and keeps `v` at 1. Readers MUST ignore body fields they
 don't know (the `id` covers the raw bytes, so verification is unaffected) and
 display unknown types as-is. `recovery`, `observed`, `restore` and `unknown`
-were added this way in trail 0.2.
+were added this way in trail 0.2; `dest`, `sent`, `secrets` and the types
+`sent`, `guard`, `network` and `resolved` in trail 0.3.

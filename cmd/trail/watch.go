@@ -223,7 +223,7 @@ func watchRun(args []string) error {
 	if len(args) > 0 {
 		return errors.New("add folders with `trail watch add <folder>`, then run `trail watch`")
 	}
-	if len(s.Config.Watch) == 0 {
+	if len(s.Config.Watch) == 0 && !s.Config.Net {
 		fmt.Println("No folders to watch yet. Add some first:")
 		fmt.Println()
 		fmt.Println("  " + bold("trail watch add ~/Documents ~/Desktop"))
@@ -268,6 +268,11 @@ func watchRun(args []string) error {
 		}
 	}
 	sync()
+	var mon *netMonitor
+	if s.Config.Net {
+		mon = loadMonitor(s)
+		say("recording which apps talk to which sites")
+	}
 	fmt.Println(dim("   every change is recorded · Ctrl-C to stop"))
 
 	// Changes another tool already recorded (a Claude Code hook, an undo) are
@@ -307,7 +312,12 @@ func watchRun(args []string) error {
 		if time.Since(lastConfig) > 30*time.Second {
 			if fresh, err := openStore(); err == nil {
 				s.Config.Watch = fresh.Config.Watch
+				s.Config.Net = fresh.Config.Net
 				sync()
+				if s.Config.Net && mon == nil {
+					mon = loadMonitor(s)
+					say("recording which apps talk to which sites")
+				}
 			}
 			lastConfig = time.Now()
 		}
@@ -374,6 +384,13 @@ func watchRun(args []string) error {
 				recorded[c.Path+"\x00"+c.After] = time.Now()
 			}
 			say("%s %s  %s  %s", marker(e), dim(e.Short()), oneLine(e.Body.Action.Summary, 60), stats(fresh))
+		}
+		if s.Config.Net && mon != nil {
+			if e, err := mon.poll(s); err != nil {
+				say("%s can't read network connections: %v", yellow("!"), err)
+			} else if e != nil {
+				say("%s %s  %s", marker(e), dim(e.Short()), oneLine(e.Body.Action.Summary, 70))
+			}
 		}
 		// Rescanning is cheap (unchanged files are only stat'ed), but stay
 		// polite on large folders: wait at least 4× as long as a scan took.

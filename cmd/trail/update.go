@@ -149,6 +149,16 @@ func cmdUpdate(args []string) error {
 		return err
 	}
 	fmt.Printf("%s Updated trail %s → %s. Your history is untouched.\n", green("✓"), version, latest)
+	// New versions can watch more of what Claude Code does: refresh its hooks.
+	if where := claudeConnected(); where != "" {
+		if user, _ := claudeSettingsPath(false); where == user {
+			if exec.Command(exe, "install", "claude").Run() == nil {
+				fmt.Println(dim("  Refreshed your Claude Code connection."))
+			}
+		} else {
+			fmt.Println(dim("  In that project, run `trail install claude --project` to pick up the new hooks."))
+		}
+	}
 	if restart {
 		if s, err := openStore(); err == nil {
 			p, _ := autostartPath()

@@ -16,8 +16,9 @@ import (
 
 // Claude Code hook integration. Claude Code runs `trail hook claude` before
 // and after each tool call and passes the call as JSON on stdin. The hook
-// never blocks Claude, never prints to stdout, and always exits 0: if
-// recording fails, the failure goes to ~/.trail/errors.log and Claude carries on.
+// always exits 0 and never breaks Claude: if recording fails, the failure goes
+// to ~/.trail/errors.log and Claude carries on. The only thing it ever prints
+// is a guard decision (block / ask first) when a secret is about to leave.
 
 type claudeEvent struct {
 	SessionID string          `json:"session_id"`
@@ -27,6 +28,7 @@ type claudeEvent struct {
 	ToolInput json.RawMessage `json:"tool_input"`
 	ToolUseID string          `json:"tool_use_id"`
 	Prompt    string          `json:"prompt"`
+	Response  json.RawMessage `json:"tool_response"`
 	AgentType string          `json:"agent_type"`
 }
 
@@ -72,24 +74,50 @@ func handleClaude(data []byte) error {
 		key = "claude:" + ev.SessionID + ":" + ev.ToolName
 	}
 	isMCP := strings.HasPrefix(ev.ToolName, "mcp__")
-	if ev.Event == "PreToolUse" && claudeFileTools[ev.ToolName] == "" && !claudeShellTools[ev.ToolName] {
-		return nil // nothing to capture beforehand
-	}
-	if (ev.Event == "PostToolUse" || ev.Event == "PostToolUseFailure") && !isMCP &&
-		claudeFileTools[ev.ToolName] == "" && !claudeShellTools[ev.ToolName] {
-		return nil
-	}
+	changesFiles := claudeFileTools[ev.ToolName] != "" || claudeShellTools[ev.ToolName]
 
 	s, err := openStore()
 	if err != nil {
 		return err
 	}
+	actor := ledger.Actor{Kind: "agent", Name: "claude-code", Session: ev.SessionID}
+	if ev.AgentType != "" {
+		actor.Name += "/" + ev.AgentType
+	}
 
 	switch ev.Event {
 	case "UserPromptSubmit":
+		flushSent(s, ev.SessionID, actor) // anything left from a turn that never finished
+		if s.Config.GuardOn() {
+			if secrets := strongSecrets(ledger.ScanSecrets([]byte(ev.Prompt))); len(secrets) > 0 {
+				reason := fmt.Sprintf("Trail stopped this prompt: it contains %s. Everything you send goes to %s. Remove it and send again.", describe(secrets), provider())
+				recordGuard(s, actor, "", "blocked your prompt: it held "+kindsWithArticle(secrets), secrets, "")
+				return emit(map[string]any{"decision": "block", "reason": reason})
+			}
+		}
 		return s.SetSessionPrompt(ev.SessionID, ev.Prompt)
 
+	case "Stop", "SubagentStop", "SessionEnd":
+		return flushSent(s, ev.SessionID, actor)
+
 	case "PreToolUse":
+		decision := ""
+		if s.Config.GuardOn() {
+			d, reason, summary, secrets := guardCheck(s, ev, input)
+			if d != "" {
+				why := oneLine(s.SessionPrompt(ev.SessionID), 400)
+				recordGuard(s, actor, ev.ToolName, summary, secrets, why)
+				if err := emit(map[string]any{"hookSpecificOutput": map[string]any{
+					"hookEventName": "PreToolUse", "permissionDecision": d, "permissionDecisionReason": reason,
+				}}); err != nil {
+					return err
+				}
+				decision = d
+			}
+		}
+		if decision == "deny" || !changesFiles {
+			return nil // it won't run, or it can't change files: nothing to capture
+		}
 		var p *ledger.Pending
 		if field := claudeFileTools[ev.ToolName]; field != "" {
 			f := str(field)
@@ -108,11 +136,12 @@ func handleClaude(data []byte) error {
 
 	case "PostToolUse", "PostToolUseFailure":
 		failed := ev.Event == "PostToolUseFailure"
-		actor := ledger.Actor{Kind: "agent", Name: "claude-code", Session: ev.SessionID}
-		if ev.AgentType != "" {
-			actor.Name += "/" + ev.AgentType
-		}
 		why := oneLine(s.SessionPrompt(ev.SessionID), 400)
+
+		// Whatever a tool returns is sent to the model. Note it for this turn.
+		if !failed {
+			noteSent(s, ev, input)
+		}
 
 		if isMCP {
 			// Something happened outside the file system. Trail can record it and
@@ -121,13 +150,19 @@ func handleClaude(data []byte) error {
 			if readOnly {
 				return nil // a lookup changed nothing
 			}
+			server := strings.SplitN(strings.TrimPrefix(ev.ToolName, "mcp__"), "__", 2)[0]
 			_, err := s.Append(ledger.Body{
 				Actor:    actor,
 				Action:   ledger.Action{Type: "external", Tool: ev.ToolName, Summary: mcpSummary(ev.ToolName), Command: oneLine(string(ev.ToolInput), 600), Failed: failed},
 				Why:      why,
 				Recovery: hint,
+				Dest:     server,
+				Secrets:  ledger.ScanSecrets(ev.ToolInput),
 			})
 			return err
+		}
+		if !changesFiles {
+			return nil
 		}
 
 		p, err := s.TakePending(key)
@@ -166,6 +201,17 @@ func handleClaude(data []byte) error {
 		return err
 	}
 	return nil
+}
+
+// emit prints a decision for Claude Code. It is the only thing a hook ever
+// writes to stdout.
+func emit(v any) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	_, err = os.Stdout.Write(append(b, '\n'))
+	return err
 }
 
 func fileSummary(changes []ledger.Change, fallback string) string {
@@ -215,10 +261,10 @@ func cmdInstall(args []string, remove bool) error {
 		return err
 	}
 	fmt.Printf("%s Connected to Claude Code %s\n\n", green("✓"), dim("("+pretty(path)+")"))
-	fmt.Println("  Every file Claude edits, and every file its shell commands change,")
-	fmt.Println("  now lands on your timeline — with the prompt that asked for it.")
-	if *withMCP {
-		fmt.Println("  Actions through MCP tools are recorded too (recorded, not reversible).")
+	fmt.Println("  Every file Claude edits or its commands change lands on your timeline,")
+	fmt.Println("  with the prompt that asked for it — and so does everything it sends to " + provider() + ".")
+	if s, err := openStore(); err == nil && s.Config.GuardOn() {
+		fmt.Println("  The guard is on: Claude can't read your secrets or send them out without asking.")
 	}
 	fmt.Println()
 	fmt.Println("  Ask Claude Code to change something, then run " + bold("trail log"))
@@ -296,10 +342,10 @@ func writeClaudeHooks(path string, remove, withMCP bool) error {
 	if hooks == nil {
 		hooks = map[string]any{}
 	}
-	matcher := "Edit|MultiEdit|Write|NotebookEdit|Bash|PowerShell"
-	if withMCP {
-		matcher = "^(Edit|MultiEdit|Write|NotebookEdit|Bash|PowerShell)$|^mcp__"
-	}
+	// Edits and commands (to record and undo), reads and searches (what is sent
+	// to the model), web requests and MCP tools (what leaves the computer).
+	matcher := "^(Edit|MultiEdit|Write|NotebookEdit|Bash|PowerShell|Read|Grep|WebFetch|WebSearch)$|^mcp__"
+	_ = withMCP // MCP tools are always covered now; the flag is kept so old commands still work
 	events := []struct {
 		name    string
 		matcher string
@@ -309,6 +355,8 @@ func writeClaudeHooks(path string, remove, withMCP bool) error {
 		{"PreToolUse", matcher, 60},
 		{"PostToolUse", matcher, 60},
 		{"PostToolUseFailure", matcher, 60},
+		{"Stop", "", 10},
+		{"SessionEnd", "", 5},
 	}
 	for _, ev := range events {
 		groups, _ := hooks[ev.name].([]any)

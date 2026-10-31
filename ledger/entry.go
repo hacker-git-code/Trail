@@ -68,6 +68,13 @@ type Body struct {
 	// Recovery tells a person how to reverse an action Trail can't reverse
 	// itself (an email sent, a payment made). Optional.
 	Recovery string `json:"recovery,omitempty"`
+	// Dest is where data went, for entries about data leaving the computer
+	// (e.g. "Anthropic (Claude's model)" or "api.example.com").
+	Dest string `json:"dest,omitempty"`
+	// Sent lists what left: files and outputs an AI agent sent to its model.
+	Sent []Sent `json:"sent,omitempty"`
+	// Secrets found in what was sent, or in what a guard blocked.
+	Secrets []Secret `json:"secrets,omitempty"`
 }
 
 // Entry is one line of the ledger.

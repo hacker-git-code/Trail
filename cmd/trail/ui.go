@@ -59,6 +59,17 @@ func marker(e *ledger.Entry) string {
 		return cyan("●")
 	case "external":
 		return purple("◆")
+	case "guard":
+		return red("⊘")
+	case "sent":
+		if len(e.Body.Secrets) > 0 {
+			return red("↗")
+		}
+		return purple("↗")
+	case "network":
+		return dim("⇢")
+	case "resolved":
+		return green("✓")
 	case "init":
 		return dim("○")
 	}

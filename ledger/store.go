@@ -27,11 +27,17 @@ type Config struct {
 	Ignore        []string `json:"ignore"`          // extra ignore patterns, like .trailignore
 	Watch         []string `json:"watch"`           // folders `trail watch` keeps a copy of
 	WatchMaxFiles int      `json:"watch_max_files"` // larger watched folders are refused
+	Guard         *bool    `json:"guard,omitempty"` // stop AI agents from sending secrets out (default on)
+	GuardAllow    []string `json:"guard_allow"`     // files and patterns agents may read anyway
+	Net           bool     `json:"net"`             // record which apps talk to which sites`
 }
 
 func DefaultConfig() Config {
 	return Config{Wrap: []string{}, MaxFileBytes: 10 << 20, MaxFiles: 25000, Ignore: []string{}, Watch: []string{}, WatchMaxFiles: 200000}
 }
+
+// GuardOn reports whether the guard is on. It is on unless turned off.
+func (c Config) GuardOn() bool { return c.Guard == nil || *c.Guard }
 
 // File is the path of a file in the ledger directory, for local state such as
 // the watcher's heartbeat. It is never part of the ledger itself.
@@ -131,6 +137,9 @@ func (s *Store) loadConfig() error {
 	}
 	if s.Config.Wrap == nil {
 		s.Config.Wrap = []string{}
+	}
+	if s.Config.GuardAllow == nil {
+		s.Config.GuardAllow = []string{}
 	}
 	return nil
 }

@@ -27,6 +27,30 @@ $ trail restore ~/Documents/taxes
 One small Go binary. No dependencies, no account, nothing leaves your machine.
 Website: [traillayer.framer.website](https://traillayer.framer.website)
 
+## What's new in 0.3: keep your data in
+
+AI agents send everything they read to their model's servers, and other apps
+talk to sites you never see. 0.3 shows you what leaves your computer, stops
+secrets from leaving, and tells you how to cancel any that already did.
+
+- **See what AI agents send out.** Every file and command output Claude Code
+  reads goes to Anthropic. `trail sent` lists all of it, turn by turn, with any
+  keys or passwords inside flagged.
+- **The guard stops leaks before they happen** (on by default). An agent can't
+  read `.env` files, SSH keys or other credential files. It has to ask before
+  reading a file that holds a key, printing your environment variables or
+  uploading data. A web request or MCP call carrying a secret is blocked, and so
+  is a prompt where you pasted a live API key by mistake.
+  `trail guard allow <file>` when you mean it.
+- **Cancel what leaked.** Sent data can't be pulled back, but a cancelled key is
+  useless. `trail leaks` lists every secret that left, where it went, and the
+  exact page to cancel it on (Anthropic, OpenAI, GitHub, AWS, Stripe, Google…).
+- **See which app talks to which site** — any app, not just AI. `trail net on`
+  records it, flags AI services and new destinations, and
+  `trail net block <site.com>` / `<app.exe>` cuts one off. (Traffic is encrypted:
+  Trail sees who connects where, not what's inside. For connected AI agents,
+  `trail sent` has the content.)
+
 ## What's new in 0.2
 
 Built from the replies to the launch post:
@@ -71,7 +95,8 @@ or build it: `go build -o trail ./cmd/trail`
 ```sh
 trail watch add ~/Documents ~/Desktop ~/code   # cover the folders that matter, from any app
 trail watch autostart on                       # keep watching in the background, from every login
-trail install claude                           # Claude Code: adds who and why to every change
+trail install claude                           # Claude Code: who, why, what it sends — and the guard
+trail net on                                   # record which apps talk to which sites
 trail wrap add codex aider gemini              # any other CLI (paste the one line it prints)
 ```
 
@@ -91,6 +116,14 @@ trail wrap add codex aider gemini              # any other CLI (paste the one li
 | `trail head` | the current head — post it somewhere public as an anchor |
 | `trail status` | what's connected and watched |
 | `trail update` | get the latest version (`--check` to only look) |
+
+| Your data | |
+|---|---|
+| `trail sent` | everything AI agents sent off your computer, and where it went |
+| `trail leaks` | secrets that left, where, and how to cancel each one. `trail leaks fixed <n>` once done |
+| `trail guard` | what was stopped. `on` / `off`, `allow <file>`, `disallow <file>` |
+| `trail net` | which apps talk to which sites. `on` / `off`, `now` for a live look |
+| `trail net block <site.com\|app.exe>` | cut one off (sites: every OS · apps: Windows). `unblock`, `blocked` |
 
 | Watching | |
 |---|---|
@@ -129,8 +162,19 @@ or undo overwrites is saved first, so it can itself be undone.
 The format is specified in [SPEC.md](SPEC.md). Anything that follows it can
 write to, verify, or display a Trail ledger.
 
-## Honest limits (v0.2)
+## Honest limits (v0.3)
 
+- **Encrypted traffic stays encrypted.** For other apps, Trail records which app
+  connected to which site, not what was sent. Only agents connected through
+  Trail (Claude Code today) have their content recorded and guarded.
+- **Secret detection is pattern-based.** It knows the shapes of common keys
+  (Anthropic, OpenAI, GitHub, AWS, Stripe, Razorpay, Google, Slack, SendGrid,
+  private keys, JWTs, database URLs) and flags likely passwords. It can miss a
+  secret with no recognisable shape.
+- **Sent data can't be unsent.** Trail tells you how to cancel what leaked; it
+  can't delete a copy from someone else's servers.
+- **Blocking needs admin rights.** Run the terminal as administrator (Windows)
+  or use sudo. Blocking an app is Windows-only for now.
 - **Tamper-evident, not tamper-proof.** Nobody can quietly rewrite history,
   but someone with full control of this machine *and* its key could rewrite
   all of it. Posting `trail head` somewhere you don't control closes that gap.
@@ -142,13 +186,12 @@ write to, verify, or display a Trail ledger.
 - **Watched folders cost disk space** for the first copy (compressed, stored once).
   Files over 10 MB, `.git`, `node_modules`, virtualenvs and caches are skipped;
   add your own patterns to a `.trailignore`.
-- **Sent data can't be unsent.** External actions are recorded with a recovery
-  step, not reversed.
 
 ## Next
 
 - Which app made each change, for watched folders
-- A guard that pauses an agent before it reads secrets or deletes many files
+- The guard and sent log for Codex, Cursor and other agents
+- Pausing an agent before it deletes many files
 - Key in the OS keychain / Secure Enclave / TPM
 - **The timeline app** — scroll back, see what changed, tap to undo
 

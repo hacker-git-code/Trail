@@ -78,7 +78,7 @@ func cmdLog(args []string) error {
 	var shown []*ledger.Entry
 	for i := len(entries) - 1; i >= 0 && (len(shown) < *n || *n <= 0); i-- {
 		e := entries[i]
-		if e.Body.Action.Type == "init" && !*all {
+		if (e.Body.Action.Type == "init" || e.Body.Action.Type == "network") && !*all {
 			continue
 		}
 		if *agent != "" && !strings.HasPrefix(e.Body.Actor.Name, *agent) {
@@ -118,6 +118,9 @@ func cmdLog(args []string) error {
 		}
 		if e.Body.Action.Type == "external" {
 			summary += purple("  can't be undone")
+		}
+		if n := len(e.Body.Secrets); n > 0 && e.Body.Action.Type != "guard" {
+			summary += red(fmt.Sprintf("  %s inside", plural(n, "secret")))
 		}
 		fmt.Printf("  %s  %s %s  %s  %s  %s\n",
 			dim(t.Format("15:04")), marker(e), dim(e.Short()),
@@ -195,6 +198,36 @@ func cmdShow(args []string) error {
 		row("undo", yellow("undone by "+u.Short()))
 	}
 	row("note", b.Note)
+	if b.Dest != "" {
+		row("to", b.Dest)
+	}
+	if len(b.Secrets) > 0 {
+		label := "keys"
+		for _, sec := range b.Secrets {
+			fmt.Printf("  %s  %s %s\n", dim(fmt.Sprintf("%-5s", label)), red(sec.Kind), dim(sec.Masked))
+			label = ""
+		}
+	}
+	if len(b.Sent) > 0 {
+		fmt.Println()
+		for _, it := range b.Sent {
+			src := it.Source
+			if filepath.IsAbs(src) {
+				src = pretty(src)
+			}
+			line := fmt.Sprintf("  %s %s  %s", purple("↗"), src, dim(humanBytes(it.Bytes)))
+			if len(it.Secrets) > 0 {
+				line += "  " + red(ledger.SecretKinds(it.Secrets))
+			}
+			fmt.Println(line)
+		}
+	}
+	if b.Action.Type == "sent" {
+		if len(b.Secrets) > 0 {
+			row("fix", "These keys left your computer. Run `trail leaks` to see how to cancel them.")
+		}
+		return nil
+	}
 	if b.Action.Type == "external" {
 		row("undo", purple("can't be undone by Trail — it happened outside your files"))
 		row("fix", b.Recovery)
@@ -293,6 +326,9 @@ func cmdUndo(args []string) error {
 				fmt.Printf("  %s  %s\n", dim("sent"), oneLine(target.Body.Action.Command, 200))
 			}
 			fix := target.Body.Recovery
+			if target.Body.Action.Type == "sent" && fix == "" {
+				fix = "Nothing to cancel: no secrets were in what was sent."
+			}
 			if fix == "" {
 				fix = "Reverse it by hand where it happened."
 			}
